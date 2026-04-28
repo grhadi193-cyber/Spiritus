@@ -1,0 +1,1000 @@
+      <span class="ck">ALPN</span><span class="cv">h2</span>`;
+  } else if (configTab === 'httpupgrade') {
+    link = u.httpupgrade_vmess || '';
+    label = 'HTTPUpgrade VMess Link';
+    info = `
+      <span class="ck">Protocol</span><span class="cv" style="color:#3498db">VMess + HTTPUpgrade + TLS</span>
+      <span class="ck">Server</span><span class="cv">${SERVER_INFO.ip}</span>
+      <span class="ck">Port</span><span class="cv">${serverInfo.httpupgrade_port || 2055}</span>
+      <span class="ck">UUID</span><span class="cv" style="font-size:10px;word-break:break-all">${u.uuid}</span>
+      <span class="ck">Network</span><span class="cv">HTTPUpgrade</span>
+      <span class="ck">Path</span><span class="cv">${serverInfo.httpupgrade_path || '/httpupgrade'}</span>
+      <span class="ck">TLS</span><span class="cv">Enabled</span>
+      <span class="ck">SNI</span><span class="cv">${SERVER_INFO.sni}</span>`;
+  } else if (configTab === 'ss2022') {
+    link = u.ss2022 || '';
+    label = 'ShadowSocks 2022 Link';
+    info = `
+      <span class="ck">Protocol</span><span class="cv" style="color:#e67e22">ShadowSocks 2022</span>
+      <span class="ck">Server</span><span class="cv">${SERVER_INFO.ip}</span>
+      <span class="ck">Port</span><span class="cv">${serverInfo.ss2022_port || 2056}</span>
+      <span class="ck">Method</span><span class="cv">AEAD-2022-BLAKE3</span>
+      <span class="ck">Network</span><span class="cv">TCP + UDP</span>
+      <span class="ck">Type</span><span class="cv">Per-user key derived from UUID</span>`;
+  } else if (configTab === 'vless_ws') {
+    link = u.vless_ws || '';
+    label = 'VLESS WebSocket Link';
+    info = `
+      <span class="ck">Protocol</span><span class="cv" style="color:#1abc9c">VLESS + WS + TLS</span>
+      <span class="ck">Server</span><span class="cv">${SERVER_INFO.ip}</span>
+      <span class="ck">Port</span><span class="cv">${serverInfo.vless_ws_port || 2057}</span>
+      <span class="ck">UUID</span><span class="cv" style="font-size:10px;word-break:break-all">${u.uuid}</span>
+      <span class="ck">Network</span><span class="cv">WebSocket</span>
+      <span class="ck">Path</span><span class="cv">${serverInfo.vless_ws_path || '/vless-ws'}</span>
+      <span class="ck">TLS</span><span class="cv">Enabled</span>
+      <span class="ck">SNI</span><span class="cv">${SERVER_INFO.sni}</span>`;
+  }
+
+  document.getElementById('config-link-label').textContent = label;
+  document.getElementById('config-vmess').value = link;
+  document.getElementById('config-info').innerHTML = info;
+
+  try {
+    if (link) {
+      const qr = qrcode(0, 'M');
+      qr.addData(link);
+      qr.make();
+      document.getElementById('config-qr').innerHTML = qr.createSvgTag(5, 0);
+    } else {
+      document.getElementById('config-qr').innerHTML = '<small style="color:var(--t3)">Not configured</small>';
+    }
+  } catch(e) { document.getElementById('config-qr').innerHTML = '<small style="color:var(--t3)">QR Error</small>'; }
+}
+
+function _copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
+function copyConfigLink() {
+  const ta = document.getElementById('config-vmess');
+  if (!ta.value) { toast('No link available','error'); return; }
+  _copyText(ta.value).then(()=>toast('Link copied')).catch(()=>toast('Link copied'));
+}
+
+function copySubUrl() {
+  const v = document.getElementById('config-sub-url').value;
+  if (!v) return;
+  _copyText(v).then(()=>toast('Sub link copied')).catch(()=>toast('Sub link copied'));
+}
+
+async function forceSync() {
+  const r = await fetch(API+'/sync', {method:'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    toast('Sync complete' + (d.disabled > 0 ? ' — '+d.disabled+' user(s) disabled' : ''));
+    fetchUsers();
+  }
+}
+
+/* ── Activity Monitor ── */
+let activityTarget = '';
+let activityInterval = null;
+let activityTab = 'sites';
+
+async function showActivity(name) {
+  activityTarget = name;
+  document.getElementById('activity-name').textContent = name;
+  document.getElementById('activity-analysis').innerHTML = '<div class="activity-empty">Loading analysis...</div>';
+  document.getElementById('activity-sites').innerHTML = '';
+  document.getElementById('activity-recent').innerHTML = '';
+  document.getElementById('activity-total').textContent = '';
+  activityTab = 'analysis';
+  document.querySelectorAll('.activity-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.getElementById('activity-analysis').style.display = '';
+  document.getElementById('activity-sites').style.display = 'none';
+  document.getElementById('activity-recent').style.display = 'none';
+  showModal('activity-modal');
+  await fetchActivity();
+  if (activityInterval) clearInterval(activityInterval);
+  activityInterval = setInterval(fetchActivity, 5000);
+}
+
+function closeActivity() {
+  closeModal('activity-modal');
+  if (activityInterval) { clearInterval(activityInterval); activityInterval = null; }
+}
+
+function switchActivityTab(tab) {
+  activityTab = tab;
+  const tabs = ['analysis','sites','recent'];
+  document.querySelectorAll('.activity-tab').forEach((t,i) =>
+    t.classList.toggle('active', tabs[i]===tab));
+  tabs.forEach(t => {
+    const el = document.getElementById('activity-'+t);
+    if (el) el.style.display = t===tab?'':'none';
+  });
+}
+
+async function fetchActivity() {
+  try {
+    const r = await fetch(API+'/users/'+encodeURIComponent(activityTarget)+'/activity');
+    if (!r.ok) return;
+    renderActivity(await r.json());
+  } catch(e) {}
+}
+
+function countryFlag(cc) {
+  if (!cc || cc.length !== 2) return '';
+  return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+function isDanger(cc) { return cc === 'IL' || cc === 'PS'; }
+
+function riskBadge(risk) {
+  if (risk === 'danger') return '<span class="svc-risk-tag risk-danger">SUSPICIOUS</span>';
+  if (risk === 'watch') return '<span class="svc-risk-tag risk-watch">MONITOR</span>';
+  return '';
+}
+
+function renderAnalysis(analysis) {
+  const el = document.getElementById('activity-analysis');
+  if (!analysis || !analysis.categories || !analysis.categories.length) {
+    el.innerHTML = '<div class="activity-empty">No analysis data yet.</div>';
+    return;
+  }
+  const summary = analysis.summary || [];
+  const cats = analysis.categories || [];
+  const svcs = analysis.services || [];
+
+  let html = '';
+  if (summary.length) {
+    html += '<div class="analysis-section"><div class="analysis-title"><span class="at-icon">\uD83D\uDD0E</span> What is this user doing?</div>';
+    html += '<div class="behavior-summary">';
+    summary.forEach(line => {
+      const hasSusp = line.includes('[SUSPICIOUS]');
+      const hasMon = line.includes('[MONITOR]');
+      const clean = line.replace(' [SUSPICIOUS]','').replace(' [MONITOR]','');
+      html += `<div class="behavior-line"><span class="bl-icon">${clean.charAt(0)===' '?'':clean.split(' ')[0]}</span>`;
+      html += `<span>${esc(clean.substring(clean.indexOf(' ')+1))}</span>`;
+      if (hasSusp) html += '<span class="bl-risk risk-danger">SUSPICIOUS</span>';
+      else if (hasMon) html += '<span class="bl-risk risk-watch">MONITOR</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  html += '<div class="analysis-section"><div class="analysis-title"><span class="at-icon">\uD83D\uDCCA</span> Traffic Breakdown</div>';
+  cats.forEach(c => {
+    html += `<div class="cat-bar-wrap">
+      <div class="cat-bar-header">
+        <span class="cat-bar-name"><span class="cb-icon">${c.icon||''}</span> ${esc(c.label)} ${riskBadge(c.risk)}</span>
+        <span class="cat-bar-pct" style="color:${c.color}">${c.percent}%</span>
+      </div>
+      <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${c.percent}%;background:${c.color}"></div></div>
+      <div class="cat-bar-services">`;
+    (c.top_services||[]).forEach(s => {
+      html += `<span class="cat-svc-chip">${esc(s.name)} (${s.count})</span>`;
+    });
+    html += '</div></div>';
+  });
+  html += '</div>';
+
+  html += '<div class="analysis-section"><div class="analysis-title"><span class="at-icon">\uD83C\uDFAF</span> Top Services</div>';
+  html += '<div class="svc-table">';
+  svcs.slice(0,15).forEach((s,i) => {
+    html += `<div class="svc-row">
+      <span class="svc-rank">#${i+1}</span>
+      <span class="svc-name">${esc(s.name)}</span>
+      <span class="svc-cat" style="background:${s.color}22;color:${s.color}">${esc(s.category)}</span>
+      ${riskBadge(s.risk)}
+      <span class="svc-count">${s.count}x</span>
+    </div>`;
+  });
+  html += '</div></div>';
+
+  el.innerHTML = html;
+}
+
+function renderDeep(deep) {
+  const el = document.getElementById('activity-analysis');
+  if (!deep || !deep.activities) return;
+
+  let html = el.innerHTML;
+
+  const vClass = deep.verdict_level==='danger'?'verdict-danger':deep.verdict_level==='watch'?'verdict-watch':'verdict-safe';
+  const vIcon = deep.verdict_level==='danger'?'\uD83D\uDEA8':deep.verdict_level==='watch'?'\u26A0\uFE0F':'\u2705';
+  html += `<div class="deep-section">`;
+  html += `<div class="verdict-box ${vClass}">${vIcon} Verdict: ${esc(deep.verdict)}</div>`;
+
+  html += `<div class="deep-stats">
+    <div class="deep-stat"><div class="deep-stat-val">${deep.total_connections}</div><div class="deep-stat-lbl">Connections</div></div>
+    <div class="deep-stat"><div class="deep-stat-val">${deep.unique_destinations}</div><div class="deep-stat-lbl">Unique Destinations</div></div>
+  </div>`;
+
+  if (deep.activities && deep.activities.length) {
+    html += '<div class="deep-title">\uD83D\uDD0D Detected Activities (what they are probably doing)</div>';
+    deep.activities.forEach(a => {
+      const icon = a.action.includes('Watch')||a.action.includes('video')?'\u25B6':
+                   a.action.includes('Messag')||a.action.includes('chat')?'\u2709':
+                   a.action.includes('Search')||a.action.includes('Brows')?'\uD83D\uDD0D':
+                   a.action.includes('Shop')?'\uD83D\uDED2':
+                   a.action.includes('Bank')||a.action.includes('Pay')?'\uD83C\uDFE6':
+                   a.action.includes('News')?'\uD83D\uDCF0':
+                   a.action.includes('hack')||a.action.includes('Exploit')?'\u2620':
+                   a.action.includes('adult')||a.action.includes('Adult')?'\uD83D\uDEAB':
+                   a.action.includes('Game')||a.action.includes('Steam')?'\uD83C\uDFAE':
+                   a.action.includes('Email')||a.action.includes('mail')?'\uD83D\uDCE7':
+                   a.action.includes('VPN')||a.action.includes('Tor')?'\uD83D\uDEE1':
+                   a.action.includes('AI')||a.action.includes('ChatGPT')||a.action.includes('Claude')?'\uD83E\uDD16':
+                   '\uD83D\uDCBB';
+      html += `<div class="activity-item">
+        <span class="ai-icon">${icon}</span>
+        <div class="ai-text">
+          <span class="ai-action">${esc(a.action)}</span>
+          <span class="ai-host">${esc(a.host)} :${a.port}</span>
+        </div>
+        <span class="ai-count">${a.count}x</span>
+      </div>`;
+    });
+  }
+
+  if (deep.ports && deep.ports.length) {
+    html += '<div class="deep-title" style="margin-top:16px">\uD83D\uDD0C Protocol / Port Analysis</div>';
+    deep.ports.forEach(p => {
+      html += `<div class="port-row">
+        <span class="port-num">:${p.port}</span>
+        <span class="port-desc">${esc(p.description)}</span>
+        <span class="port-count">${p.count}x</span>
+      </div>`;
+    });
+  }
+
+  if (deep.hourly && deep.hourly.length) {
+    const maxH = Math.max(...deep.hourly.map(h=>h.count)) || 1;
+    html += '<div class="deep-title" style="margin-top:16px">\u23F0 Activity Timeline (24h)</div>';
+    html += '<div style="display:flex;align-items:flex-end;gap:2px;height:80px;padding:8px 0;border-bottom:1px solid var(--border)">';
+    deep.hourly.forEach(h => {
+      const pct = Math.max(h.count/maxH*100, h.count>0?3:0);
+      const bg = h.count>0?'var(--accent)':'var(--bg3)';
+      html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px" title="${h.hour}:00 — ${h.count} connections">
+        <div style="width:100%;border-radius:3px 3px 0 0;background:${bg};min-height:1px;height:${pct}%"></div>
+      </div>`;
+    });
+    html += '</div>';
+    html += '<div style="display:flex;gap:2px;font-size:8px;color:var(--t3)">';
+    deep.hourly.forEach((h,i) => {
+      html += `<div style="flex:1;text-align:center">${i%3===0?h.hour:''}</div>`;
+    });
+    html += '</div>';
+  }
+
+  if (deep.peak_hours) {
+    html += `<div style="margin-top:12px;padding:10px;background:var(--bg3);border-radius:var(--radius-sm);font-size:12px;color:var(--t2)">
+      \u23F0 Peak activity hours: <b style="color:var(--t0)">${esc(deep.peak_hours)}</b>
+    </div>`;
+  }
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function svcTag(service, risk, color) {
+  if (!service) return '';
+  const rc = risk==='danger'?'var(--red)':risk==='watch'?'var(--yellow)':(color||'var(--t3)');
+  return `<span class="site-svc" style="background:${rc}18;color:${rc}">${esc(service)}</span>`;
+}
+
+function renderActivity(data) {
+  const analysisEl = document.getElementById('activity-analysis');
+  const sitesEl = document.getElementById('activity-sites');
+  const recentEl = document.getElementById('activity-recent');
+  const totalEl = document.getElementById('activity-total');
+  const alertsEl = document.getElementById('activity-alerts');
+
+  if (!data.sites.length && !data.recent.length) {
+    alertsEl.innerHTML = '';
+    analysisEl.innerHTML = '<div class="activity-empty">No activity recorded yet.<br><small style="color:var(--t3)">Data will appear when user connects.</small></div>';
+    sitesEl.innerHTML = '<div class="activity-empty">No activity recorded yet.</div>';
+    recentEl.innerHTML = '<div class="activity-empty">No recent connections.</div>';
+    totalEl.textContent = '';
+    return;
+  }
+  const alerts = data.alerts || [];
+  alertsEl.innerHTML = alerts.length ? alerts.map(a => `
+    <div class="alert-banner alert-${a.level}">
+      <span class="alert-icon">${a.level==='danger'?'\uD83D\uDEA8':'\u26A0\uFE0F'}</span>
+      <span class="alert-text">${esc(a.msg)}</span>
+      <span class="alert-count">${a.count}x</span>
+    </div>`).join('') : '';
+
+  renderAnalysis(data.analysis);
+  if (data.deep) renderDeep(data.deep);
+
+  sitesEl.innerHTML = data.sites.map(s => {
+    const g = s.geo || {};
+    const cc = g.cc || '';
+    const rowClass = isDanger(cc) ? 'row-danger' : (s.host.includes('.gov')||s.host.includes('.mil') ? 'row-warning' : '');
+    const svcLabel = s.service ? svcTag(s.service, s.risk||'safe') : '';
+    return `<div class="site-row ${rowClass}">
+      <span class="site-flag">${countryFlag(cc)}</span>
+      <span class="site-geo">${esc(cc)}</span>
+      <span class="site-host" title="${esc(g.org||'')} — ${esc([g.city,g.country].filter(Boolean).join(', '))}">${esc(s.host)}</span>
+      ${svcLabel}
+      <span class="site-port">:${s.port}</span>
+      <span class="site-count">${s.count}x</span>
+      <span class="site-time">${s.last.split(' ')[1]||''}</span>
+    </div>`;
+  }).join('');
+
+  recentEl.innerHTML = data.recent.map(r => {
+    const g = r.geo || {};
+    const cc = g.cc || '';
+    const svcLabel = r.service ? `<span class="recent-svc" style="background:var(--bg4);color:var(--t2)">${esc(r.service)}</span>` : '';
+    return `<div class="recent-row ${isDanger(cc)?'row-danger':''}">
+      <span class="recent-time">${r.time.split(' ')[1]||''}</span>
+      <span class="recent-flag">${countryFlag(cc)}</span>
+      <span class="recent-geo">${esc(cc)}</span>
+      <span class="recent-host">${esc(r.host)}</span>
+      ${svcLabel}
+      <span class="recent-port">:${r.port}</span>
+    </div>`;
+  }).join('');
+
+  const countries = {};
+  data.sites.forEach(s => { const cc = (s.geo||{}).cc; if (cc) countries[cc] = (countries[cc]||0) + s.count; });
+  const countryStr = Object.entries(countries).sort((a,b) => b[1]-a[1]).slice(0, 8)
+    .map(([cc,n]) => `${countryFlag(cc)} ${cc}: ${n}`).join('  ');
+  totalEl.innerHTML = `<div>${data.total} connections &nbsp;|&nbsp; ${countryStr}</div>`;
+}
+
+/* ── Settings ── */
+
+function updateSettingsStatus() {
+  // Update status indicators from serverInfo
+  const si = serverInfo || {};
+  const set = (id, on, label) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 's-indicator ' + (on ? 'on' : 'off');
+    const txt = el.querySelector('.si-text');
+    if (txt) txt.textContent = label;
+    else el.lastChild.textContent = ' ' + label;
+  };
+  set('si-vmess', true, 'Active :' + (si.vmess_port || 443));
+  set('si-vless', si.vless, si.vless ? 'Active :' + (si.vless_port || 2053) : 'OFF — Keys needed');
+  set('si-trojan', si.trojan, si.trojan ? 'Active :' + (si.trojan_port || 2083) : 'OFF');
+  set('si-grpc', si.grpc, si.grpc ? 'Active :' + (si.grpc_port || 2054) : 'OFF');
+  set('si-hu', si.httpupgrade, si.httpupgrade ? 'Active :' + (si.httpupgrade_port || 2055) : 'OFF');
+  set('si-ss2022', si.ss2022, si.ss2022 ? 'Active :' + (si.ss2022_port || 2056) : 'OFF');
+  set('si-vless-ws', si.vless_ws, si.vless_ws ? 'Active :' + (si.vless_ws_port || 2057) : 'OFF');
+  set('si-cdn', si.cdn, si.cdn ? 'Active — ' + (si.cdn_domain || '?') : 'OFF');
+  set('si-ks', si.kill_switch, si.kill_switch ? 'ON' : 'OFF');
+  set('si-fragment', si.fragment_enabled, si.fragment_enabled ? 'ON (client)' : 'OFF');
+  set('si-mux', si.mux_enabled, si.mux_enabled ? 'ON (client)' : 'OFF');
+  // Anti-censorship is always info
+  const aEl = document.getElementById('si-anti');
+  if (aEl) { aEl.className = 's-indicator info'; }
+  const bEl = document.getElementById('si-backup');
+  if (bEl) { bEl.className = 's-indicator info'; }
+  // Telegram
+  const tgEnabled = si.telegram_enabled || false;
+  set('si-telegram', tgEnabled, tgEnabled ? 'ON' : 'OFF');
+}
+
+async function loadSettings() {
+  try {
+    const r = await fetch(API+'/settings');
+    if (!r.ok) return;
+    const s = await r.json();
+    // Config customization
+    document.getElementById('set-config-prefix').value = s.config_prefix || 'Proxy';
+    document.getElementById('set-vmess-port').value = s.vmess_port || 443;
+    document.getElementById('set-vmess-sni').value = s.vmess_sni || 'www.aparat.com';
+    document.getElementById('set-vmess-ws-path').value = s.vmess_ws_path || '/api/v1/stream';
+    // Security
+    document.getElementById('set-ks').checked = s.kill_switch_enabled;
+    // VLESS / Reality
+    document.getElementById('set-reality-sni').value = s.reality_sni || 'www.google.com';
+    document.getElementById('set-vless-port').value = s.vless_port || 2053;
+    document.getElementById('vless-status').textContent = s.reality_public_key
+      ? 'Active — Key: ' + s.reality_public_key.substring(0, 16) + '...'
+      : 'Not configured — click Regenerate Keys';
+    // Trojan
+    document.getElementById('set-trojan').checked = s.trojan_enabled || false;
+    document.getElementById('set-trojan-port').value = s.trojan_port || 2083;
+    // gRPC
+    document.getElementById('set-grpc').checked = s.grpc_enabled || false;
+    document.getElementById('set-grpc-port').value = s.grpc_port || 2054;
+    document.getElementById('set-grpc-service').value = s.grpc_service_name || 'GunService';
+    // HTTPUpgrade
+    document.getElementById('set-httpupgrade').checked = s.httpupgrade_enabled || false;
+    document.getElementById('set-httpupgrade-port').value = s.httpupgrade_port || 2055;
+    document.getElementById('set-httpupgrade-path').value = s.httpupgrade_path || '/httpupgrade';
+    // Fragment
+    document.getElementById('set-fragment').checked = s.fragment_enabled || false;
+    document.getElementById('set-fragment-packets').value = s.fragment_packets || 'tlshello';
+    document.getElementById('set-fragment-length').value = s.fragment_length || '100-200';
+    document.getElementById('set-fragment-interval').value = s.fragment_interval || '10-20';
+    // MUX
+    document.getElementById('set-mux').checked = s.mux_enabled || false;
+    document.getElementById('set-mux-concurrency').value = s.mux_concurrency || 8;
+    // SS2022
+    document.getElementById('set-ss2022').checked = s.ss2022_enabled || false;
+    document.getElementById('set-ss2022-port').value = s.ss2022_port || 2056;
+    document.getElementById('set-ss2022-method').value = s.ss2022_method || '2022-blake3-aes-128-gcm';
+    document.getElementById('set-ss2022-key').value = s.ss2022_server_key || '';
+    document.getElementById('ss2022-status').textContent = s.ss2022_server_key ? 'Key active' : 'No key — click Generate';
+    // VLESS WS
+    document.getElementById('set-vless-ws').checked = s.vless_ws_enabled || false;
+    document.getElementById('set-vless-ws-port').value = s.vless_ws_port || 2057;
+    document.getElementById('set-vless-ws-path').value = s.vless_ws_path || '/vless-ws';
+    // Advanced Anti-Censorship
+    document.getElementById('set-fingerprint').value = s.fingerprint || 'chrome';
+    document.getElementById('set-noise').checked = s.noise_enabled || false;
+    document.getElementById('set-noise-packet').value = s.noise_packet || 'rand:50-100';
+    document.getElementById('set-noise-delay').value = s.noise_delay || '10-20';
+    // CDN
+    document.getElementById('set-cdn').checked = s.cdn_enabled;
+    document.getElementById('set-cdn-domain').value = s.cdn_domain || '';
+    document.getElementById('set-cdn-path').value = s.cdn_ws_path || '/cdn-ws';
+    document.getElementById('set-cdn-port').value = s.cdn_port || 2082;
+    // Telegram
+    document.getElementById('set-telegram').checked = s.telegram_enabled || false;
+    document.getElementById('set-telegram-token').value = s.telegram_bot_token || '';
+    document.getElementById('set-telegram-chat').value = s.telegram_chat_id || '';
+    document.getElementById('set-tg-disabled').checked = s.telegram_notify_user_disabled !== false;
+    document.getElementById('set-tg-expired').checked = s.telegram_notify_user_expired !== false;
+    document.getElementById('set-tg-killswitch').checked = s.telegram_notify_kill_switch !== false;
+    document.getElementById('set-tg-traffic').checked = s.telegram_notify_traffic_exhausted !== false;
+    document.getElementById('set-tg-created').checked = s.telegram_notify_user_created || false;
+    document.getElementById('set-tg-deleted').checked = s.telegram_notify_user_deleted || false;
+    // DPI Evasion (Real)
+    document.getElementById('set-dpi-tcp-fragment').checked = s.dpi_tcp_fragment || false;
+    document.getElementById('set-dpi-tls-fragment').checked = s.dpi_tls_fragment || false;
+    document.getElementById('set-dpi-ip-fragment').checked = s.dpi_ip_fragment || false;
+    document.getElementById('set-dpi-tcp-keepalive').checked = s.dpi_tcp_keepalive || false;
+    document.getElementById('set-dpi-dns-tunnel').checked = s.dpi_dns_tunnel || false;
+    document.getElementById('set-dpi-icmp-tunnel').checked = s.dpi_icmp_tunnel || false;
+    document.getElementById('set-dpi-domain-front').checked = s.dpi_domain_front || false;
+    document.getElementById('set-dpi-cdn-front').value = s.dpi_cdn_front || '';
+    loadBackups();
+    updateSettingsStatus();
+  } catch(e) {}
+}
+
+async function saveSettings() {
+  const data = {
+    // Config customization
+    config_prefix: document.getElementById('set-config-prefix').value.trim() || 'Proxy',
+    vmess_port: parseInt(document.getElementById('set-vmess-port').value) || 443,
+    vmess_sni: document.getElementById('set-vmess-sni').value.trim() || 'www.aparat.com',
+    vmess_ws_path: document.getElementById('set-vmess-ws-path').value.trim() || '/api/v1/stream',
+    // Security
+    kill_switch_enabled: document.getElementById('set-ks').checked,
+    // VLESS / Reality
+    reality_sni: document.getElementById('set-reality-sni').value.trim() || 'www.google.com',
+    reality_dest: (document.getElementById('set-reality-sni').value.trim() || 'www.google.com') + ':443',
+    vless_port: parseInt(document.getElementById('set-vless-port').value) || 2053,
+    // Trojan
+    trojan_enabled: document.getElementById('set-trojan').checked,
+    trojan_port: parseInt(document.getElementById('set-trojan-port').value) || 2083,
+    // gRPC
+    grpc_enabled: document.getElementById('set-grpc').checked,
+    grpc_port: parseInt(document.getElementById('set-grpc-port').value) || 2054,
+    grpc_service_name: document.getElementById('set-grpc-service').value.trim() || 'GunService',
+    // HTTPUpgrade
+    httpupgrade_enabled: document.getElementById('set-httpupgrade').checked,
+    httpupgrade_port: parseInt(document.getElementById('set-httpupgrade-port').value) || 2055,
+    httpupgrade_path: document.getElementById('set-httpupgrade-path').value.trim() || '/httpupgrade',
+    // Fragment
+    fragment_enabled: document.getElementById('set-fragment').checked,
+    fragment_packets: document.getElementById('set-fragment-packets').value,
+    fragment_length: document.getElementById('set-fragment-length').value.trim() || '100-200',
+    fragment_interval: document.getElementById('set-fragment-interval').value.trim() || '10-20',
+    // MUX
+    mux_enabled: document.getElementById('set-mux').checked,
+    mux_concurrency: parseInt(document.getElementById('set-mux-concurrency').value) || 8,
+    // SS2022
+    ss2022_enabled: document.getElementById('set-ss2022').checked,
+    ss2022_port: parseInt(document.getElementById('set-ss2022-port').value) || 2056,
+    ss2022_method: document.getElementById('set-ss2022-method').value,
+    // VLESS WS
+    vless_ws_enabled: document.getElementById('set-vless-ws').checked,
+    vless_ws_port: parseInt(document.getElementById('set-vless-ws-port').value) || 2057,
+    vless_ws_path: document.getElementById('set-vless-ws-path').value.trim() || '/vless-ws',
+    // Advanced
+    fingerprint: document.getElementById('set-fingerprint').value,
+    noise_enabled: document.getElementById('set-noise').checked,
+    noise_packet: document.getElementById('set-noise-packet').value.trim() || 'rand:50-100',
+    noise_delay: document.getElementById('set-noise-delay').value.trim() || '10-20',
+    // CDN
+    cdn_enabled: document.getElementById('set-cdn').checked,
+    cdn_domain: document.getElementById('set-cdn-domain').value.trim(),
+    cdn_ws_path: document.getElementById('set-cdn-path').value.trim() || '/cdn-ws',
+    cdn_port: parseInt(document.getElementById('set-cdn-port').value) || 2082,
+    // Telegram
+    telegram_enabled: document.getElementById('set-telegram').checked,
+    telegram_bot_token: document.getElementById('set-telegram-token').value.trim(),
+    telegram_chat_id: document.getElementById('set-telegram-chat').value.trim(),
+    telegram_notify_user_disabled: document.getElementById('set-tg-disabled').checked,
+    telegram_notify_user_expired: document.getElementById('set-tg-expired').checked,
+    telegram_notify_kill_switch: document.getElementById('set-tg-killswitch').checked,
+    telegram_notify_traffic_exhausted: document.getElementById('set-tg-traffic').checked,
+    telegram_notify_user_created: document.getElementById('set-tg-created').checked,
+    telegram_notify_user_deleted: document.getElementById('set-tg-deleted').checked,
+    // DPI Evasion (Real)
+    dpi_tcp_fragment: document.getElementById('set-dpi-tcp-fragment').checked,
+    dpi_tls_fragment: document.getElementById('set-dpi-tls-fragment').checked,
+    dpi_ip_fragment: document.getElementById('set-dpi-ip-fragment').checked,
+    dpi_tcp_keepalive: document.getElementById('set-dpi-tcp-keepalive').checked,
+    dpi_dns_tunnel: document.getElementById('set-dpi-dns-tunnel').checked,
+    dpi_icmp_tunnel: document.getElementById('set-dpi-icmp-tunnel').checked,
+    dpi_domain_front: document.getElementById('set-dpi-domain-front').checked,
+    dpi_cdn_front: document.getElementById('set-dpi-cdn-front').value.trim(),
+  };
+  const r = await fetch(API+'/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  const d = await r.json();
+  if (d.ok) {
+    toast('Settings saved' + (d.rebuild ? ' — server restarted' : ''));
+    await fetchServerInfo();
+    updateSettingsStatus();
+    showSettingsValidation(data);
+  } else toast(d.error||'Error','error');
+}
+
+function showSettingsValidation(data) {
+  const el = document.getElementById('settings-validation');
+  if (!el) return;
+  const checks = [];
+  const ok = (msg) => checks.push({ok:true, msg});
+  const warn = (msg) => checks.push({ok:false, msg});
+  // VMess always on
+  ok('VMess — Active on port ' + (data.vmess_port || 443));
+  // VLESS
+  if (serverInfo.vless) ok('VLESS/Reality — Active on port ' + (serverInfo.vless_port || 2053));
+  else warn('VLESS/Reality — OFF (click Regenerate Keys to activate / برای فعال‌سازی Regenerate Keys بزنید)');
+  // Trojan
+  if (data.trojan_enabled) ok('Trojan — Active on port ' + data.trojan_port);
+  else warn('Trojan — OFF');
+  // gRPC
+  if (data.grpc_enabled) ok('gRPC — Active on port ' + data.grpc_port);
+  else warn('gRPC — OFF');
+  // HTTPUpgrade
+  if (data.httpupgrade_enabled) ok('HTTPUpgrade — Active on port ' + data.httpupgrade_port);
+  else warn('HTTPUpgrade — OFF');
+  // SS2022
+  if (data.ss2022_enabled && serverInfo.ss2022) ok('SS2022 — Active on port ' + data.ss2022_port);
+  else if (data.ss2022_enabled) warn('SS2022 — Enabled but no server key! Click Generate / فعال ولی بدون کلید! Generate بزنید');
+  else warn('SS2022 — OFF');
+  // VLESS-WS
+  if (data.vless_ws_enabled) ok('VLESS-WS — Active on port ' + data.vless_ws_port);
+  else warn('VLESS-WS — OFF');
+  // CDN
+  if (data.cdn_enabled && data.cdn_domain) ok('CDN — Active via ' + data.cdn_domain);
+  else if (data.cdn_enabled) warn('CDN — Enabled but no domain set! / فعال ولی دامنه نداره!');
+  else warn('CDN — OFF');
+  // Fragment
+  if (data.fragment_enabled) ok('Fragment — ON (' + (data.fragment_packets||'tlshello') + ')');
+  else warn('Fragment — OFF');
+  // MUX
+  if (data.mux_enabled) ok('MUX — ON (concurrency: ' + data.mux_concurrency + ')');
+  else warn('MUX — OFF');
+
+  el.style.display = '';
+  el.innerHTML = '<div style="padding:14px;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border)">' +
+    '<div style="font-weight:700;margin-bottom:8px;color:var(--t1)">✅ Validation / بررسی تنظیمات:</div>' +
+    checks.map(c => `<div style="font-size:12px;padding:3px 0;color:${c.ok?'#3fb950':'#f85149'}">${c.ok?'✅':'⚠️'} ${c.msg}</div>`).join('') +
+    '</div>';
+  setTimeout(() => { el.style.display = 'none'; }, 15000);
+}
+
+function toggleKillSwitch() {}
+function toggleCDN() {}
+
+async function regenerateReality() {
+  if (!confirm('Generate new Reality keys? Existing VLESS configs will stop working.')) return;
+  const r = await fetch(API+'/settings/regenerate-reality', {method:'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    toast('Reality keys regenerated — server restarted');
+    document.getElementById('vless-status').textContent = 'Active — Key: ' + d.public_key.substring(0, 16) + '...';
+    fetchServerInfo();
+  } else toast(d.error||'Error','error');
+}
+
+async function generateSS2022Key() {
+  if (!confirm('Generate new SS2022 server key? Existing SS2022 configs will need updating.')) return;
+  const r = await fetch(API+'/settings/generate-ss2022-key', {method:'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    toast('SS2022 key generated — server restarted');
+    document.getElementById('set-ss2022-key').value = d.ss2022_server_key;
+    document.getElementById('ss2022-status').textContent = 'Key active';
+    fetchServerInfo();
+  } else toast(d.error||'Error','error');
+}
+
+async function createBackup() {
+  toast('Creating backup...');
+  const r = await fetch(API+'/backup', {method:'POST'});
+  const d = await r.json();
+  if (d.ok) { toast('Backup created'); loadBackups(); }
+  else toast(d.error||'Error','error');
+}
+
+async function loadBackups() {
+  try {
+    const r = await fetch(API+'/backups');
+    const list = await r.json();
+    const el = document.getElementById('backup-list');
+    if (!list.length) { el.innerHTML = '<div style="color:var(--t3);font-size:12px;padding:8px">No backups yet</div>'; return; }
+    el.innerHTML = list.slice(0,5).map(b => `
+      <div class="backup-item">
+        <span class="backup-name">${esc(b.name)}</span>
+        <span class="backup-meta">${fmtBytes(b.size)} — ${b.time}</span>
+      </div>`).join('');
+  } catch(e) {}
+}
+
+async function doChangePw() {
+  const cur = document.getElementById('pw-current').value;
+  const nw = document.getElementById('pw-new').value;
+  const cf = document.getElementById('pw-confirm').value;
+  if (!cur) { toast('Enter current password', 'error'); return; }
+  if (nw.length < 8) { toast('New password must be at least 8 characters', 'error'); return; }
+  if (nw !== cf) { toast('Passwords do not match', 'error'); return; }
+  const r = await fetch(API+'/change-password', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({current: cur, new: nw})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    toast('Password changed. Redirecting...');
+    ['pw-current','pw-new','pw-confirm'].forEach(id => document.getElementById(id).value = '');
+    closeModal('pw-modal');
+    setTimeout(() => location.reload(), 1500);
+  } else { toast(d.error || 'Error', 'error'); }
+}
+
+/* ── Settings Tabs ── */
+function switchSettingsTab(tabName) {
+  // Hide all tab contents
+  document.querySelectorAll('.settings-tab-content').forEach(el => el.classList.remove('active'));
+  // Remove active from all tab buttons
+  document.querySelectorAll('.config-tabs .config-tab').forEach(el => el.classList.remove('active'));
+  // Show selected tab content
+  const content = document.getElementById('settings-' + tabName);
+  if (content) content.classList.add('active');
+  // Activate corresponding button
+  const btn = document.querySelector('.config-tabs .config-tab[onclick*="'+tabName+'"]');
+  if (btn) btn.classList.add('active');
+}
+
+/* ── Helpers ── */
+function showModal(id) {
+  document.getElementById(id).classList.add('show');
+  if (id === 'settings-modal') loadSettings();
+  if (id === 'agents-modal') fetchAgents();
+  if (id === 'sysmon-modal') openSysmonDetail();
+  if (id === 'online-modal') fetchOnlineUsers();
+}
+function closeModal(id){document.getElementById(id).classList.remove('show')}
+function hideModal(id){document.getElementById(id).classList.remove('show')}
+function esc(s){if(!s)return '';return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function fmtTraffic(bytes) {
+  if (bytes <= 0) return '0 B';
+  if (bytes < 1024) return bytes.toFixed(0) + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  if (bytes < 1024*1024*1024) return (bytes/(1024*1024)).toFixed(2) + ' MB';
+  return (bytes/(1024*1024*1024)).toFixed(2) + ' GB';
+}
+function fmtBytes(b) {
+  if (b < 1) return '0 B';
+  const u = ['B','KB','MB','GB'];
+  const i = Math.min(Math.floor(Math.log(b)/Math.log(1024)), 3);
+  return (b/Math.pow(1024,i)).toFixed(i>1?2:i>0?1:0)+' '+u[i];
+}
+function fmtSpeed(bps) { return fmtBytes(bps)+'/s'; }
+
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show'+(type==='error'?' error':'');
+  setTimeout(()=>el.className='toast', 3000);
+}
+
+/* ── Agent Management (Admin) ── */
+let _agents = [];
+let _agentEditId = null;
+let _agentPwId = null;
+
+async function fetchAgents() {
+  try {
+    const r = await fetch(API+'/agents');
+    if (r.ok) _agents = await r.json();
+    renderAgents();
+  } catch(e) {}
+}
+
+function renderAgents() {
+  const el = document.getElementById('agents-list');
+  if (!el) return;
+  if (!_agents.length) {
+    el.innerHTML = '<div style="color:var(--t3);font-size:13px;text-align:center;padding:20px">No agents yet</div>';
+    return;
+  }
+  el.innerHTML = _agents.map(a => {
+    const pct = a.traffic_quota_gb > 0 ? Math.min(100, Math.round((a.traffic_used_gb / a.traffic_quota_gb) * 100)) : 0;
+    const barColor = pct < 60 ? 'var(--green)' : pct < 85 ? 'var(--yellow)' : 'var(--red)';
+    const remaining = Math.max(0, a.traffic_quota_gb - a.traffic_used_gb);
+    return `<div class="agent-card">
+      <div class="agent-card-head">
+        <span class="agent-card-name">${esc(a.name)}</span>
+        <span class="badge ${a.active?'badge-active':'badge-inactive'}">${a.active?'Active':'Disabled'}</span>
+      </div>
+      <div class="agent-info">
+        <span>Quota: <b style="color:var(--t0)">${a.traffic_used_gb} / ${a.traffic_quota_gb} GB</b></span>
+        <span>Remaining: <b style="color:var(--t0)">${remaining.toFixed(1)} GB</b></span>
+        <span>Users: <b style="color:var(--t0)">${a.user_count}</b></span>
+      </div>
+      <div class="agent-quota-bar"><div class="agent-quota-fill" style="width:${pct}%;background:${barColor}"></div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">
+        <span style="font-size:11px;color:var(--t3)">${pct}% used</span>
+        <span style="font-size:11px;color:var(--t3)">Login: /agent</span>
+      </div>
+      <div class="agent-actions" style="margin-top:10px">
+        <button class="btn btn-outline btn-sm" onclick="showEditAgent(${a.id},'${esc(a.name)}',${a.traffic_quota_gb})">Edit Quota</button>
+        <button class="btn btn-outline btn-sm" onclick="showResetAgentPw(${a.id},'${esc(a.name)}')">Reset Pass</button>
+        <button class="btn ${a.active?'btn-orange':'btn-green'} btn-sm" onclick="toggleAgent(${a.id},${a.active?0:1})">${a.active?'Disable':'Enable'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteAgent(${a.id},'${esc(a.name)}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function doAddAgent() {
+  const name = document.getElementById('agent-add-name').value.trim();
+  const pass = document.getElementById('agent-add-pass').value;
+  const quota = parseFloat(document.getElementById('agent-add-quota').value);
+  const speed = parseInt(document.getElementById('agent-add-speed').value) || 200;
+  if (!name) { toast('Enter agent name','error'); return; }
+  if (!pass || pass.length < 6) { toast('Password must be at least 6 chars','error'); return; }
+  if (!quota || quota <= 0) { toast('Enter valid quota','error'); return; }
+  const r = await fetch(API+'/agents', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, password: pass, traffic_quota_gb: quota, speed_limit_default: speed})});
+  const d = await r.json();
+  if (d.ok) {
+    toast('Agent '+name+' created');
+    document.getElementById('agent-add-name').value = '';
+    document.getElementById('agent-add-pass').value = '';
+    fetchAgents();
+  } else { toast(d.error||'Error','error'); }
+}
+
+function showEditAgent(id, name, quota) {
+  _agentEditId = id;
+  document.getElementById('agent-edit-name').textContent = name;
+  document.getElementById('agent-edit-quota').value = quota;
+  showModal('agent-edit-modal');
+}
+
+async function doEditAgentQuota() {
+  if (!_agentEditId) return;
+  const quota = parseFloat(document.getElementById('agent-edit-quota').value);
+  if (!quota || quota <= 0) { toast('Enter valid quota','error'); return; }
+  const r = await fetch(API+'/agents/'+_agentEditId+'/edit', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({traffic_quota_gb: quota})});
+  const d = await r.json();
+  if (d.ok) { toast('Quota updated'); closeModal('agent-edit-modal'); fetchAgents(); }
+  else { toast(d.error||'Error','error'); }
+}
+
+function showResetAgentPw(id, name) {
+  _agentPwId = id;
+  document.getElementById('agent-pw-name').textContent = name;
+  document.getElementById('agent-pw-new').value = '';
+  showModal('agent-pw-modal');
+}
+
+async function doResetAgentPw() {
+  if (!_agentPwId) return;
+  const pw = document.getElementById('agent-pw-new').value;
+  if (!pw || pw.length < 6) { toast('Password must be at least 6 chars','error'); return; }
+  const r = await fetch(API+'/agents/'+_agentPwId+'/reset-password', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({password: pw})});
+  const d = await r.json();
+  if (d.ok) { toast('Password reset'); closeModal('agent-pw-modal'); }
+  else { toast(d.error||'Error','error'); }
+}
+
+async function toggleAgent(id, newState) {
+  const r = await fetch(API+'/agents/'+id+'/edit', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({active: !!newState})});
+  const d = await r.json();
+  if (d.ok) { toast(newState?'Agent enabled':'Agent disabled'); fetchAgents(); }
+  else { toast(d.error||'Error','error'); }
+}
+
+async function deleteAgent(id, name) {
+  if (!confirm('Delete agent "'+name+'"?\\n\\nTheir users will be transferred to admin.')) return;
+  const r = await fetch(API+'/agents/'+id, {method:'DELETE', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({delete_users: false})});
+  const d = await r.json();
+  if (d.ok) { toast('Agent deleted'); fetchAgents(); }
+  else { toast(d.error||'Error','error'); }
+}
+
+/* ── System Monitor ── */
+let sysmonData = {};
+
+async function fetchSystemMonitor() {
+  try {
+    const r = await fetch(API+'/system-monitor');
+    if (!r.ok) return;
+    sysmonData = await r.json();
+    renderSysmonBar();
+  } catch(e) {}
+}
+
+function gaugeClass(pct) { return pct < 60 ? 'gauge-ok' : pct < 85 ? 'gauge-warn' : 'gauge-crit'; }
+
+function renderSysmonBar() {
+  const d = sysmonData;
+  if (!d.cpu_percent && d.cpu_percent !== 0) return;
+  const cpuEl = document.getElementById('sm-cpu-gauge');
+  const ramEl = document.getElementById('sm-ram-gauge');
+  const diskEl = document.getElementById('sm-disk-gauge');
+  const upEl = document.getElementById('sm-uptime');
+  const xrEl = document.getElementById('sm-xray');
+  const netEl = document.getElementById('sm-net');
+  if (cpuEl) { cpuEl.textContent = d.cpu_percent+'%'; cpuEl.className = 'gauge '+gaugeClass(d.cpu_percent); }
+  if (ramEl) { ramEl.textContent = (d.ram_percent||0)+'%'; ramEl.className = 'gauge '+gaugeClass(d.ram_percent||0); }
+  if (diskEl) { diskEl.textContent = (d.disk_percent||0)+'%'; diskEl.className = 'gauge '+gaugeClass(d.disk_percent||0); }
+  if (upEl) { const s=d.uptime_seconds||0; const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); upEl.textContent = h>24 ? Math.floor(h/24)+'d '+h%24+'h' : h+'h '+m+'m'; }
+  if (xrEl) xrEl.textContent = d.xray_pid ? '✅ Running' : '❌ Down';
+  if (netEl) netEl.textContent = '↑'+fmtBytes(d.net_bytes_sent||0)+' ↓'+fmtBytes(d.net_bytes_recv||0);
+}
+
+async function openSysmonDetail() {
+  await fetchSystemMonitor();
+  const d = sysmonData;
+  document.getElementById('smd-cpu').textContent = (d.cpu_percent||0)+'%';
+  document.getElementById('smd-ram').textContent = (d.ram_percent||0)+'%';
+  document.getElementById('smd-ram-detail').textContent = fmtBytes(d.ram_used||0)+' / '+fmtBytes(d.ram_total||0);
+  document.getElementById('smd-disk').textContent = (d.disk_percent||0)+'%';
+  document.getElementById('smd-disk-detail').textContent = fmtBytes(d.disk_used||0)+' / '+fmtBytes(d.disk_total||0);
+  document.getElementById('smd-load').textContent = (d.load_avg||[0,0,0]).map(v=>v.toFixed(2)).join(' / ');
+  if (d.xray_pid) {
+    document.getElementById('smd-xray').textContent = '✅ Running (PID: '+(d.xray_pid||'?')+')';
+    document.getElementById('smd-xray-detail').textContent = 'Version: '+(d.xray_version||'?')+' | Mem: '+fmtBytes(d.xray_mem||0)+' | CPU: '+(d.xray_cpu||0)+'%';
+  } else {
+    document.getElementById('smd-xray').textContent = '❌ Not running';
+    document.getElementById('smd-xray-detail').textContent = '';
+  }
+  document.getElementById('smd-net').textContent = '↑ Sent: '+fmtBytes(d.net_bytes_sent||0)+' | ↓ Recv: '+fmtBytes(d.net_bytes_recv||0);
+  // Fetch traffic history
+  fetchTrafficHistory();
+  fetchTopTrafficUsers();
+}
+
+async function fetchTrafficHistory() {
+  try {
+    const r = await fetch(API+'/traffic-history?days=30');
+    if (!r.ok) return;
+    const data = await r.json();
+    const chart = document.getElementById('smd-traffic-chart');
+    const labels = document.getElementById('smd-traffic-labels');
+    if (!data.length) { chart.innerHTML = '<div style="color:var(--t3);font-size:12px">No data yet</div>'; labels.innerHTML=''; return; }
+    const maxBytes = Math.max(...data.map(d=>d.traffic_bytes||0)) || 1;
+    chart.innerHTML = data.map(d => {
+      const pct = Math.max(((d.traffic_bytes||0)/maxBytes)*100, d.traffic_bytes>0?3:0);
+      return `<div class="traffic-chart-bar" style="height:${pct}%;background:var(--accent)" data-tip="${d.date}: ${fmtBytes(d.traffic_bytes||0)}"></div>`;
+    }).join('');
+    labels.innerHTML = data.map((d,i) => `<span>${i%5===0?d.date.slice(5):''}</span>`).join('');
+  } catch(e) {}
+}
+
+async function fetchTopTrafficUsers() {
+  try {
+    const r = await fetch(API+'/traffic-history/top?days=30');
+    if (!r.ok) return;
+    const data = await r.json();
+    const el = document.getElementById('smd-top-users');
+    if (!data.length) { el.innerHTML = '<div style="color:var(--t3);font-size:12px">No data yet</div>'; return; }
+    const maxB = data[0].total_bytes||1;
+    el.innerHTML = data.slice(0,10).map((u,i) => {
+      const pct = Math.round((u.total_bytes/maxB)*100);
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="width:20px;font-size:11px;color:var(--t3);text-align:right">#${i+1}</span>
+        <span style="width:80px;font-size:12px;font-weight:600;color:var(--t1);overflow:hidden;text-overflow:ellipsis">${esc(u.username)}</span>
+        <div style="flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);border-radius:4px"></div></div>
+        <span style="font-size:11px;color:var(--t2);min-width:60px;text-align:right">${fmtBytes(u.total_bytes)}</span>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+/* ── Online Users ── */
+async function fetchOnlineUsers() {
+  try {
+    const r = await fetch(API+'/online-users');
+    if (!r.ok) return;
+    const data = await r.json();
+    const el = document.getElementById('online-users-content');
+    if (!data.length) {
+      el.innerHTML = '<div style="color:var(--t3);text-align:center;padding:30px">No users currently online</div>';
+      return;
+    }
+    el.innerHTML = `<table class="online-tbl"><thead><tr><th>User</th><th>IPs</th><th>Count</th></tr></thead><tbody>` +
+      data.map(u => `<tr>
+        <td style="font-weight:600">${esc(u.username)}</td>
+        <td style="font-family:monospace;font-size:11px">${(u.ips||[]).map(ip=>esc(ip)).join('<br>')}</td>
+        <td>${(u.ips||[]).length}</td>
+      </tr>`).join('') +
+      `</tbody></table>`;
+  } catch(e) { toast('Error fetching online users','error'); }
+}
+
+function showUserIPs(name) {
+  const u = users.find(x=>x.name===name);
+  if (!u || !u.online_ips || !u.online_ips.length) { toast('No IPs found','error'); return; }
+  alert('Connected IPs for '+name+':\n\n'+u.online_ips.join('\n'));
+}
+
+/* ── Add Traffic ── */
+let addTrafficTarget = '';
+
+function showAddTraffic(name) {
+  addTrafficTarget = name;
+  document.getElementById('addtraffic-name').textContent = name;
+  document.getElementById('addtraffic-gb').value = 5;
+  showModal('addtraffic-modal');
+}
+
+async function doAddTraffic() {
+  const gb = parseFloat(document.getElementById('addtraffic-gb').value);
+  if (!gb || gb <= 0) { toast('Enter valid GB amount','error'); return; }
+  try {
+    const r = await fetch(API+'/users/'+encodeURIComponent(addTrafficTarget)+'/add-traffic', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({gb})
+    });
+    let d = {};
+    try { d = await r.json(); } catch (e) {
+      toast(r.status === 404 ? 'API not found — restart panel after update' : 'Bad server response','error');
+      return;
+    }
+    if (d.ok) {
+      closeModal('addtraffic-modal');
+      toast(gb+' GB added to '+addTrafficTarget);
+      fetchUsers();
+    } else toast(d.error||('HTTP '+r.status),'error');
+  } catch(e) { toast('Connection error','error'); }
+}
+
+/* ── Edit Note ── */
+async function promptEditNote(name, current) {
+  const note = prompt('Edit note for '+name+':', current || '');
+  if (note === null) return;
+  try {
+    const r = await fetch(API+'/users/'+encodeURIComponent(name)+'/update-note', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({note: note.trim()})
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Note updated'); fetchUsers(); }
+    else toast(d.error||'Error','error');
+  } catch(e) { toast('Connection error','error'); }
+}
+
+async function promptSpeed(name, currentDown, currentUp) {
+  const val = prompt('Speed limit (KB/s) for ' + name + ':\nFormat: down,up (e.g. 200,200)\n0 = unlimited', currentDown + ',' + currentUp);
+  if (val === null) return;

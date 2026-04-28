@@ -1,0 +1,127 @@
+      <input type="number" id="aggressive-duration" placeholder="60" value="10">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Attack Type:</label>
+      <select id="resilience-op-type">
+        <option value="syn_flood">Massive SYN Flood</option>
+        <option value="udp_flood">UDP Flood Multi-Port</option>
+        <option value="icmp_flood">ICMP Flood Variety</option>
+        <option value="http_flood">HTTP Flood Layer 7</option>
+        <option value="dns_amp">DNS Amplification</option>
+        <option value="ntp_amp">NTP Amplification</option>
+        <option value="combined">Combined Attack</option>
+      </select>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-ports-group" style="display:none">
+      <label>UDP Ports (comma-separated):</label>
+      <input type="text" id="aggressive-ports" placeholder="53,80,443,8080" value="53,80,443">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-dns-group" style="display:none">
+      <label>DNS Servers (comma-separated):</label>
+      <input type="text" id="aggressive-dns-servers" placeholder="8.8.8.8,1.1.1.1" value="8.8.8.8,1.1.1.1">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-ntp-group" style="display:none">
+      <label>NTP Servers (comma-separated):</label>
+      <input type="text" id="aggressive-ntp-servers" placeholder="pool.ntp.org,time.nist.gov" value="pool.ntp.org">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-url-group" style="display:none">
+      <label>Target URL:</label>
+      <input type="text" id="aggressive-target-url" placeholder="https://example.com" value="http://127.0.0.1">
+    </div>
+    
+    <div class="modal-actions">
+      <button class="btn btn-orange" onclick="startResilienceOp()">Start Operation</button>
+      <button class="btn btn-danger" onclick="stopResilienceOps()">Stop All Operations</button>
+      <button class="btn btn-outline" onclick="hideModal('aggressive-modal')">Close</button>
+    </div>
+    
+    <div id="aggressive-status" style="margin-top:16px;padding:12px;background:rgba(255,255,255,.02);border-radius:var(--radius-sm);display:none">
+      <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Attack Status:</div>
+      <div id="aggressive-status-text" style="font-size:13px;color:var(--t0)">No active attacks</div>
+    </div>
+  </div>
+</div>
+
+<!-- Counter Techniques Modal -->
+<div class="modal-overlay" id="fightback-modal">
+  <div class="modal modal-xl">
+    <h3>🛡️ Counter Techniques</h3>
+    <div class="alert-banner alert-danger" style="margin-bottom:16px">
+      <span class="alert-icon">⚠️</span>
+      <span class="alert-text">CRITICAL WARNING: These techniques can disrupt network infrastructure. Use only for authorized testing and with extreme caution.</span>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Target IP:</label>
+      <input type="text" id="fightback-target-ip" placeholder="192.168.1.1" value="127.0.0.1">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Target Port:</label>
+      <input type="number" id="fightback-target-port" placeholder="443" value="443">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Duration (seconds):</label>
+      <input type="number" id="fightback-duration" placeholder="60" value="10">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Counter Technique:</label>
+      <select id="fightback-technique">
+        <option value="rst_flood">TCP RST Flood</option>
+        <option value="fin_flood">TCP FIN Flood</option>
+        <option value="icmp_redirect">ICMP Redirect</option>
+        <option value="arp_spoofing">ARP Spoofing</option>
+        <option value="dns_poisoning">DNS Poisoning</option>
+        <option value="tcp_hijacking">TCP Hijacking</option>
+        <option value="session_hijacking">Session Hijacking</option>
+        <option value="combined">Combined Counter</option>
+      </select>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-gateway-group" style="display:none">
+      <label>Gateway IP:</label>
+      <input type="text" id="fightback-gateway-ip" placeholder="192.168.1.254" value="192.168.1.254">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-dns-group" style="display:none">
+      <label>DNS Server:</label>
+      <input type="text" id="fightback-dns-server" placeholder="8.8.8.8" value="8.8.8.8">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-domain-group" style="display:none">
+      <label>Domain:</label>
+      <input type="text" id="fightback-domain" placeholder="google.com" value="google.com">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-fake-ip-group" style="display:none">
+      <label>Fake IP:</label>
+      <input type="text" id="fightback-fake-ip" placeholder="1.2.3.4" value="1.2.3.4">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-session-group" style="display:none">
+      <label>Session ID:</label>
+      <input type="text" id="fightback-session-id" placeholder="abc123def456" value="test-session-id">
+    </div>
+    
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="startCounter()">Start Counter</button>
+      <button class="btn btn-orange" onclick="stopFightBack()">Stop All Techniques</button>
+      <button class="btn btn-outline" onclick="hideModal('fightback-modal')">Close</button>
+    </div>
+    
+    <div id="fightback-status" style="margin-top:16px;padding:12px;background:rgba(255,255,255,.02);border-radius:var(--radius-sm);display:none">
+      <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Counter Status:</div>
+      <div id="fightback-status-text" style="font-size:13px;color:var(--t0)">No active techniques</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

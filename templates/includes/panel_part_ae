@@ -1,0 +1,826 @@
+  const parts = val.split(',').map(s => parseInt(s.trim()));
+  const down = parts[0] >= 0 ? parts[0] : 200;
+  const up = parts.length > 1 && parts[1] >= 0 ? parts[1] : down;
+  try {
+    const r = await fetch(API+'/users/'+encodeURIComponent(name)+'/speed-limit', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({speed_limit_down: down, speed_limit_up: up})
+    });
+    const d = await r.json();
+    if (d.ok) { toast('Speed updated: ' + down + '/' + up + ' KB/s'); fetchUsers(); }
+    else toast(d.error||'Error','error');
+  } catch(e) { toast('Connection error','error'); }
+}
+
+/* ── Export CSV / JSON ── */
+function doExportCSV() {
+  window.open(API+'/export-csv', '_blank');
+}
+
+function doExportJSON() {
+  window.open(API+'/export-json', '_blank');
+}
+
+/* ── Telegram Test ── */
+async function testTelegram() {
+  try {
+    const r = await fetch(API+'/telegram-test', {method:'POST'});
+    const d = await r.json();
+    if (d.ok) toast('Test notification sent!');
+    else toast(d.error||'Failed to send','error');
+  } catch(e) { toast('Connection error','error'); }
+}
+
+/* ── Firewall Attack Functions ── */
+async function runFirewallAttack(technique) {
+  const targetIp = document.getElementById('firewall-target-ip').value.trim();
+  const duration = parseInt(document.getElementById('firewall-duration').value) || 30;
+  
+  if (!targetIp) {
+    toast('Please enter a target IP address', 'error');
+    return;
+  }
+  
+  try {
+    const r = await fetch(API+'/firewall-attack/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        technique: technique,
+        target: targetIp,
+        duration: duration
+      })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast(`Firewall attack '${technique}' initiated (simulation mode)`);
+      fetchFirewallStats();
+    } else {
+      toast(d.error || 'Error running attack', 'error');
+    }
+  } catch(e) {
+    toast('Connection error', 'error');
+  }
+}
+
+async function fetchFirewallStats() {
+  try {
+    const r = await fetch(API+'/firewall-attack/stats');
+    const d = await r.json();
+    if (d.ok) {
+      const statsEl = document.getElementById('firewall-stats-content');
+      const displayEl = document.getElementById('firewall-stats-display');
+      
+      if (d.stats && Object.keys(d.stats).length > 0) {
+        let html = '<div style="margin-bottom:8px">';
+        for (const [attack, data] of Object.entries(d.stats)) {
+          html += `<div style="margin-bottom:4px">
+            <span style="color:var(--accent);font-weight:600">${attack}:</span>
+            <span style="color:var(--t1);margin-left:8px">${JSON.stringify(data)}</span>
+          </div>`;
+        }
+        html += '</div>';
+        html += `<div style="color:var(--t3);font-size:11px">Active attacks: ${d.active_attacks || 0}</div>`;
+        statsEl.innerHTML = html;
+        displayEl.style.display = 'block';
+      } else {
+        statsEl.innerHTML = '<div style="color:var(--t3);font-size:12px">No attack statistics available</div>';
+        displayEl.style.display = 'block';
+      }
+    }
+  } catch(e) {
+    toast('Error fetching firewall stats', 'error');
+  }
+}
+
+async function stopFirewallAttacks() {
+  if (!confirm('Stop all running firewall attacks?')) return;
+  
+  try {
+    const r = await fetch(API+'/firewall-attack/stop', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'}
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('All firewall attacks stopped');
+      fetchFirewallStats();
+    } else {
+      toast(d.error || 'Error stopping attacks', 'error');
+    }
+  } catch(e) {
+    toast('Connection error', 'error');
+  }
+}
+
+function setTarget(ip) {
+  document.getElementById('firewall-target-ip').value = ip;
+  toast(`Target set to ${ip}`);
+}
+
+async function verifyIranianTarget() {
+  const targetIp = document.getElementById('firewall-target-ip').value.trim();
+  
+  if (!targetIp) {
+    toast('Please enter a target IP address', 'error');
+    return;
+  }
+  
+  try {
+    const r = await fetch(API+'/firewall-attack/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        technique: 'syn_flood_enhanced',
+        target: targetIp,
+        duration: 1
+      })
+    });
+    const d = await r.json();
+    const resultEl = document.getElementById('verification-result-content');
+    const displayEl = document.getElementById('target-verification-result');
+    
+    if (d.iranian_target) {
+      resultEl.innerHTML = `<div style="color:var(--green);font-weight:600">✓ ${targetIp} is Iranian censorship infrastructure</div>
+        <div style="color:var(--t2);font-size:11px;margin-top:4px">This IP belongs to known Iranian censorship ranges</div>`;
+    } else {
+      resultEl.innerHTML = `<div style="color:var(--red);font-weight:600">✗ ${targetIp} is NOT Iranian censorship infrastructure</div>
+        <div style="color:var(--t2);font-size:11px;margin-top:4px">This IP is not in known Iranian censorship ranges</div>`;
+    }
+    
+    displayEl.style.display = 'block';
+  } catch(e) {
+    toast('Error verifying target', 'error');
+  }
+}
+
+/* ── Search Modal ── */
+async function doSearch() {
+  const query = document.getElementById('search-input').value.trim();
+  if (!query) {
+    toast('Please enter a search query', 'error');
+    return;
+  }
+
+  try {
+    const r = await fetch(`${API}/search?q=${encodeURIComponent(query)}`, { credentials: 'same-origin' });
+    if (r.ok) {
+      const data = await r.json();
+      renderSearchResults(data.users);
+    } else {
+      toast('Search failed', 'error');
+    }
+  } catch(e) {
+    toast('Search error', 'error');
+  }
+}
+
+function renderSearchResults(results) {
+  const container = document.getElementById('search-results');
+  if (results.length === 0) {
+    container.innerHTML = '<div class="activity-empty">No users found</div>';
+    return;
+  }
+
+  container.innerHTML = results.map(u => `
+    <div class="site-row">
+      <div class="site-host">${u.name}</div>
+      <div class="site-port">${u.active ? 'Active' : 'Inactive'}</div>
+      <div class="site-count">${u.traffic_used_gb.toFixed(1)} GB</div>
+      <div class="site-time">${u.expire_at ? u.expire_at.split('T')[0] : 'Never'}</div>
+      <button class="btn btn-sm btn-outline" onclick="showConfig('${u.name}')">Config</button>
+    </div>
+  `).join('');
+}
+
+/* ── Report Modal ── */
+async function loadReport() {
+  try {
+    const r = await fetch(`${API}/report`, { credentials: 'same-origin' });
+    if (r.ok) {
+      const report = await r.json();
+      renderReport(report);
+    } else {
+      toast('Failed to load report', 'error');
+    }
+  } catch(e) {
+    toast('Report error', 'error');
+  }
+}
+
+function renderReport(report) {
+  document.getElementById('report-total-users').textContent = report.total_users;
+  document.getElementById('report-active-users').textContent = report.active_users;
+  document.getElementById('report-inactive-users').textContent = report.inactive_users;
+  document.getElementById('report-total-traffic').textContent = report.total_traffic_gb.toFixed(1) + ' GB';
+  document.getElementById('report-total-limit').textContent = report.total_limit_gb.toFixed(1) + ' GB';
+  document.getElementById('report-expiring-soon').textContent = report.expiring_soon;
+
+  const topUsersContainer = document.getElementById('report-top-users');
+  topUsersContainer.innerHTML = report.top_users.map(u => `
+    <div class="site-row">
+      <div class="site-host">${u.name}</div>
+      <div class="site-count">${u.traffic_used_gb.toFixed(1)} GB</div>
+      <div class="site-time">${u.active ? '✓' : '✗'}</div>
+    </div>
+  `).join('');
+}
+
+/* ── Analytics Modal ── */
+async function loadAnalytics() {
+  const days = document.getElementById('analytics-days').value || 7;
+  try {
+    const r = await fetch(`${API}/analytics?days=${days}`, { credentials: 'same-origin' });
+    if (r.ok) {
+      const analytics = await r.json();
+      renderAnalytics(analytics);
+    } else {
+      toast('Failed to load analytics', 'error');
+    }
+  } catch(e) {
+    toast('Analytics error', 'error');
+  }
+}
+
+function renderAnalytics(analytics) {
+  const dailyContainer = document.getElementById('analytics-daily');
+  if (analytics.daily_traffic.length === 0) {
+    dailyContainer.innerHTML = '<div class="activity-empty">No data available</div>';
+  } else {
+    dailyContainer.innerHTML = analytics.daily_traffic.map(d => `
+      <div class="site-row">
+        <div class="site-host">${d.date}</div>
+        <div class="site-count">${d.total_traffic ? d.total_traffic.toFixed(1) : 0} GB</div>
+        <div class="site-time">${d.user_count} users</div>
+      </div>
+    `).join('');
+  }
+
+  const topUsersContainer = document.getElementById('analytics-top-users');
+  topUsersContainer.innerHTML = analytics.top_users.map(u => `
+    <div class="site-row">
+      <div class="site-host">${u.name}</div>
+      <div class="site-count">${u.traffic_used_gb.toFixed(1)} GB</div>
+    </div>
+  `).join('');
+}
+
+/* ── Backup Modal �── */
+async function loadBackups() {
+  try {
+    const r = await fetch(`${API}/backup/list`, { credentials: 'same-origin' });
+    if (r.ok) {
+      const data = await r.json();
+      renderBackups(data.backups);
+    } else {
+      toast('Failed to load backups', 'error');
+    }
+  } catch(e) {
+    toast('Backup list error', 'error');
+  }
+}
+
+function renderBackups(backups) {
+  const container = document.getElementById('backup-list');
+  if (backups.length === 0) {
+    container.innerHTML = '<div class="activity-empty">No backups available</div>';
+    return;
+  }
+
+  container.innerHTML = backups.map(b => `
+    <div class="site-row">
+      <div class="site-host">${b.name}</div>
+      <div class="site-count">${(b.size / 1024 / 1024).toFixed(1)} MB</div>
+      <div class="site-time">${b.created.split('T')[0]}</div>
+      <button class="btn btn-sm btn-green" onclick="restoreBackup('${b.path}')">Restore</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteBackup('${b.path}')">Delete</button>
+    </div>
+  `).join('');
+}
+
+async function createBackup() {
+  try {
+    const r = await fetch(`${API}/backup/create`, { 
+      method: 'POST',
+      credentials: 'same-origin' 
+    });
+    if (r.ok) {
+      toast('Backup created successfully', 'success');
+      loadBackups();
+    } else {
+      toast('Failed to create backup', 'error');
+    }
+  } catch(e) {
+    toast('Backup error', 'error');
+  }
+}
+
+async function restoreBackup(path) {
+  if (!confirm('Are you sure you want to restore this backup? This will replace current data.')) {
+    return;
+  }
+
+  try {
+    const r = await fetch(`${API}/backup/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backup_path: path }),
+      credentials: 'same-origin'
+    });
+    if (r.ok) {
+      toast('Backup restored successfully', 'success');
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      toast('Failed to restore backup', 'error');
+    }
+  } catch(e) {
+    toast('Restore error', 'error');
+  }
+}
+
+async function deleteBackup(path) {
+  if (!confirm('Are you sure you want to delete this backup?')) {
+    return;
+  }
+
+  try {
+    // Note: This would need a backend endpoint for deletion
+    toast('Delete functionality not implemented', 'warning');
+  } catch(e) {
+    toast('Delete error', 'error');
+  }
+}
+
+async function cleanupBackups() {
+  const retentionDays = document.getElementById('backup-retention').value || 7;
+  try {
+    const r = await fetch(`${API}/backup/cleanup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retention_days: retentionDays }),
+      credentials: 'same-origin'
+    });
+    if (r.ok) {
+      const data = await r.json();
+      toast(`Cleaned up ${data.removed} old backups`, 'success');
+      loadBackups();
+    } else {
+      toast('Cleanup failed', 'error');
+    }
+  } catch(e) {
+    toast('Cleanup error', 'error');
+  }
+}
+
+/* ── Resilience ── */
+let aggressiveAttacks = [];
+
+function showAggressiveFields() {
+  const attackType = document.getElementById('aggressive-attack-type').value;
+  
+  // Hide all optional fields
+  document.getElementById('aggressive-ports-group').style.display = 'none';
+  document.getElementById('aggressive-dns-group').style.display = 'none';
+  document.getElementById('aggressive-ntp-group').style.display = 'none';
+  document.getElementById('aggressive-url-group').style.display = 'none';
+  
+  // Show relevant fields
+  if (attackType === 'udp_flood') {
+    document.getElementById('aggressive-ports-group').style.display = 'block';
+  } else if (attackType === 'dns_amp') {
+    document.getElementById('aggressive-dns-group').style.display = 'block';
+  } else if (attackType === 'ntp_amp') {
+    document.getElementById('aggressive-ntp-group').style.display = 'block';
+  } else if (attackType === 'http_flood') {
+    document.getElementById('aggressive-url-group').style.display = 'block';
+  }
+}
+
+async function startAggressiveAttack() {
+  const targetIp = document.getElementById('aggressive-target-ip').value;
+  const targetPort = parseInt(document.getElementById('aggressive-target-port').value);
+  const duration = parseInt(document.getElementById('aggressive-duration').value);
+  const attackType = document.getElementById('aggressive-attack-type').value;
+  
+  if (!targetIp || !targetPort || !duration) {
+    toast('Please fill in all required fields', 'error');
+    return;
+  }
+  
+  const attackData = {
+    target_ip: targetIp,
+    target_port: targetPort,
+    duration: duration,
+    attack_type: attackType
+  };
+  
+  // Add optional parameters
+  if (attackType === 'udp_flood') {
+    const ports = document.getElementById('aggressive-ports').value;
+    attackData.ports = ports.split(',').map(p => parseInt(p.trim()));
+  } else if (attackType === 'dns_amp') {
+    const dnsServers = document.getElementById('aggressive-dns-servers').value;
+    attackData.dns_servers = dnsServers.split(',').map(s => s.trim());
+  } else if (attackType === 'ntp_amp') {
+    const ntpServers = document.getElementById('aggressive-ntp-servers').value;
+    attackData.ntp_servers = ntpServers.split(',').map(s => s.trim());
+  } else if (attackType === 'http_flood') {
+    attackData.target_url = document.getElementById('aggressive-target-url').value;
+  }
+  
+  try {
+    const r = await fetch(`${API}/aggressive/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(attackData),
+      credentials: 'same-origin'
+    });
+    
+    if (r.ok) {
+      const data = await r.json();
+      toast(`Aggressive attack started: ${attackType}`, 'success');
+      document.getElementById('aggressive-status').style.display = 'block';
+      document.getElementById('aggressive-status-text').textContent = `Attack running: ${attackType} on ${targetIp}:${targetPort}`;
+      aggressiveAttacks.push(data.attack_id);
+    } else {
+      const error = await r.json();
+      toast(`Failed to start attack: ${error.error}`, 'error');
+    }
+  } catch(e) {
+    toast('Attack start error', 'error');
+  }
+}
+
+async function stopAggressiveAttack() {
+  try {
+    const r = await fetch(`${API}/aggressive/stop`, {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+    
+    if (r.ok) {
+      toast('All aggressive attacks stopped', 'success');
+      document.getElementById('aggressive-status').style.display = 'none';
+      document.getElementById('aggressive-status-text').textContent = 'No active attacks';
+      aggressiveAttacks = [];
+    } else {
+      toast('Failed to stop attacks', 'error');
+    }
+  } catch(e) {
+    toast('Stop attack error', 'error');
+  }
+}
+
+/* ── Fight Back Techniques ── */
+let fightBackTechniques = [];
+
+function showFightBackFields() {
+  const technique = document.getElementById('fightback-technique').value;
+  
+  // Hide all optional fields
+  document.getElementById('fightback-gateway-group').style.display = 'none';
+  document.getElementById('fightback-dns-group').style.display = 'none';
+  document.getElementById('fightback-domain-group').style.display = 'none';
+  document.getElementById('fightback-fake-ip-group').style.display = 'none';
+  document.getElementById('fightback-session-group').style.display = 'none';
+  
+  // Show relevant fields
+  if (technique === 'icmp_redirect' || technique === 'arp_spoofing') {
+    document.getElementById('fightback-gateway-group').style.display = 'block';
+  } else if (technique === 'dns_poisoning') {
+    document.getElementById('fightback-dns-group').style.display = 'block';
+    document.getElementById('fightback-domain-group').style.display = 'block';
+    document.getElementById('fightback-fake-ip-group').style.display = 'block';
+  } else if (technique === 'session_hijacking') {
+    document.getElementById('fightback-session-group').style.display = 'block';
+  }
+}
+
+async function startFightBack() {
+  const targetIp = document.getElementById('fightback-target-ip').value;
+  const targetPort = parseInt(document.getElementById('fightback-target-port').value);
+  const duration = parseInt(document.getElementById('fightback-duration').value);
+  const technique = document.getElementById('fightback-technique').value;
+  
+  if (!targetIp || !targetPort || !duration) {
+    toast('Please fill in all required fields', 'error');
+    return;
+  }
+  
+  const techniqueData = {
+    target_ip: targetIp,
+    target_port: targetPort,
+    duration: duration,
+    technique: technique
+  };
+  
+  // Add optional parameters
+  if (technique === 'icmp_redirect' || technique === 'arp_spoofing') {
+    techniqueData.gateway_ip = document.getElementById('fightback-gateway-ip').value;
+  } else if (technique === 'dns_poisoning') {
+    techniqueData.dns_server = document.getElementById('fightback-dns-server').value;
+    techniqueData.domain = document.getElementById('fightback-domain').value;
+    techniqueData.fake_ip = document.getElementById('fightback-fake-ip').value;
+  } else if (technique === 'session_hijacking') {
+    techniqueData.session_id = document.getElementById('fightback-session-id').value;
+  }
+  
+  try {
+    const r = await fetch(`${API}/fightback/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(techniqueData),
+      credentials: 'same-origin'
+    });
+    
+    if (r.ok) {
+      const data = await r.json();
+      toast(`Fight back technique started: ${technique}`, 'success');
+      document.getElementById('fightback-status').style.display = 'block';
+      document.getElementById('fightback-status-text').textContent = `Technique running: ${technique} on ${targetIp}:${targetPort}`;
+      fightBackTechniques.push(data.technique_id);
+    } else {
+      const error = await r.json();
+      toast(`Failed to start technique: ${error.error}`, 'error');
+    }
+  } catch(e) {
+    toast('Technique start error', 'error');
+  }
+}
+
+async function stopFightBack() {
+  try {
+    const r = await fetch(`${API}/fightback/stop`, {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+    
+    if (r.ok) {
+      toast('All fight back techniques stopped', 'success');
+      document.getElementById('fightback-status').style.display = 'none';
+      document.getElementById('fightback-status-text').textContent = 'No active techniques';
+      fightBackTechniques = [];
+    } else {
+      toast('Failed to stop techniques', 'error');
+    }
+  } catch(e) {
+    toast('Stop technique error', 'error');
+  }
+}
+
+// Add event listeners for dropdown changes
+document.addEventListener('DOMContentLoaded', function() {
+  const aggressiveSelect = document.getElementById('aggressive-attack-type');
+  if (aggressiveSelect) {
+    aggressiveSelect.addEventListener('change', showAggressiveFields);
+  }
+  
+  const fightbackSelect = document.getElementById('fightback-technique');
+  if (fightbackSelect) {
+    fightbackSelect.addEventListener('change', showFightBackFields);
+  }
+});
+
+/* ── Init ── */
+(async function(){
+  try {
+    const r = await fetch(API + '/users', { credentials: 'same-origin' });
+    if (r.ok) {
+      document.getElementById('login-screen').style.display='none';
+      document.getElementById('panel').style.display='block';
+      users = await r.json(); renderUsers(); updateStats();
+      startPolling();
+    }
+  } catch(e){}
+  document.getElementById('login-pass').focus();
+})();
+</script>
+
+<!-- Search Modal -->
+<div class="modal-overlay" id="search-modal">
+  <div class="modal">
+    <h3>🔍 Search Users</h3>
+    <div class="form-group">
+      <input type="text" id="search-input" placeholder="Search by name, UUID, or note..." onkeypress="if(event.key==='Enter')doSearch()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="doSearch()">Search</button>
+      <button class="btn btn-outline" onclick="hideModal('search-modal')">Cancel</button>
+    </div>
+    <div id="search-results" class="activity-body" style="max-height:300px;overflow-y:auto;margin-top:16px"></div>
+  </div>
+</div>
+
+<!-- Report Modal -->
+<div class="modal-overlay" id="report-modal">
+  <div class="modal modal-lg">
+    <h3>📊 Statistics Report</h3>
+    <div class="config-grid" style="margin-bottom:16px">
+      <div class="ck">Total Users:</div><div class="cv" id="report-total-users">—</div>
+      <div class="ck">Active Users:</div><div class="cv" id="report-active-users">—</div>
+      <div class="ck">Inactive Users:</div><div class="cv" id="report-inactive-users">—</div>
+      <div class="ck">Total Traffic:</div><div class="cv" id="report-total-traffic">—</div>
+      <div class="ck">Total Limit:</div><div class="cv" id="report-total-limit">—</div>
+      <div class="ck">Expiring Soon (7d):</div><div class="cv" id="report-expiring-soon">—</div>
+    </div>
+    <h4 style="font-size:14px;color:var(--t0);margin-bottom:12px">Top Users by Traffic</h4>
+    <div id="report-top-users" class="activity-body" style="max-height:200px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="hideModal('report-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Analytics Modal -->
+<div class="modal-overlay" id="analytics-modal">
+  <div class="modal modal-lg">
+    <h3>📈 Traffic Analytics</h3>
+    <div class="form-group">
+      <label>Period (days):</label>
+      <select id="analytics-days" onchange="loadAnalytics()">
+        <option value="7">7 days</option>
+        <option value="14">14 days</option>
+        <option value="30">30 days</option>
+      </select>
+    </div>
+    <h4 style="font-size:14px;color:var(--t0);margin-bottom:12px">Daily Traffic</h4>
+    <div id="analytics-daily" class="activity-body" style="max-height:200px;overflow-y:auto;margin-bottom:16px"></div>
+    <h4 style="font-size:14px;color:var(--t0);margin-bottom:12px">Top Users</h4>
+    <div id="analytics-top-users" class="activity-body" style="max-height:200px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="hideModal('analytics-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Backup Modal -->
+<div class="modal-overlay" id="backup-modal">
+  <div class="modal modal-lg">
+    <h3>💾 Backup & Restore</h3>
+    <div class="modal-actions" style="margin-bottom:16px">
+      <button class="btn btn-primary" onclick="createBackup()">Create Backup</button>
+      <button class="btn btn-outline" onclick="loadBackups()">Refresh List</button>
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Cleanup backups older than (days):</label>
+      <div style="display:flex;gap:8px">
+        <input type="number" id="backup-retention" value="7" min="1" style="flex:1">
+        <button class="btn btn-orange" onclick="cleanupBackups()">Cleanup</button>
+      </div>
+    </div>
+    <h4 style="font-size:14px;color:var(--t0);margin-bottom:12px">Available Backups</h4>
+    <div id="backup-list" class="activity-body" style="max-height:300px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="hideModal('backup-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Resilience Modal -->
+<div class="modal-overlay" id="aggressive-modal">
+  <div class="modal modal-xl">
+    <h3>⚔️ Resilience DPI Evasion Attacks</h3>
+    <div class="alert-banner alert-warning" style="margin-bottom:16px">
+      <span class="alert-icon">⚠️</span>
+      <span class="alert-text">WARNING: These attacks are for educational purposes only. Use only on systems you own or have explicit permission to test.</span>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Target IP:</label>
+      <input type="text" id="aggressive-target-ip" placeholder="192.168.1.1" value="127.0.0.1">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Target Port:</label>
+      <input type="number" id="aggressive-target-port" placeholder="443" value="443">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Duration (seconds):</label>
+      <input type="number" id="aggressive-duration" placeholder="60" value="10">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Attack Type:</label>
+      <select id="aggressive-attack-type">
+        <option value="syn_flood">Massive SYN Flood</option>
+        <option value="udp_flood">UDP Flood Multi-Port</option>
+        <option value="icmp_flood">ICMP Flood Variety</option>
+        <option value="http_flood">HTTP Flood Layer 7</option>
+        <option value="dns_amp">DNS Amplification</option>
+        <option value="ntp_amp">NTP Amplification</option>
+        <option value="combined">Combined Attack</option>
+      </select>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-ports-group" style="display:none">
+      <label>UDP Ports (comma-separated):</label>
+      <input type="text" id="aggressive-ports" placeholder="53,80,443,8080" value="53,80,443">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-dns-group" style="display:none">
+      <label>DNS Servers (comma-separated):</label>
+      <input type="text" id="aggressive-dns-servers" placeholder="8.8.8.8,1.1.1.1" value="8.8.8.8,1.1.1.1">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-ntp-group" style="display:none">
+      <label>NTP Servers (comma-separated):</label>
+      <input type="text" id="aggressive-ntp-servers" placeholder="pool.ntp.org,time.nist.gov" value="pool.ntp.org">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="aggressive-url-group" style="display:none">
+      <label>Target URL:</label>
+      <input type="text" id="aggressive-target-url" placeholder="https://example.com" value="http://127.0.0.1">
+    </div>
+    
+    <div class="modal-actions">
+      <button class="btn btn-orange" onclick="startAggressiveAttack()">Start Attack</button>
+      <button class="btn btn-danger" onclick="stopAggressiveAttack()">Stop All Attacks</button>
+      <button class="btn btn-outline" onclick="hideModal('aggressive-modal')">Close</button>
+    </div>
+    
+    <div id="aggressive-status" style="margin-top:16px;padding:12px;background:rgba(255,255,255,.02);border-radius:var(--radius-sm);display:none">
+      <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Attack Status:</div>
+      <div id="aggressive-status-text" style="font-size:13px;color:var(--t0)">No active attacks</div>
+    </div>
+  </div>
+</div>
+
+<!-- Fight Back Modal -->
+<div class="modal-overlay" id="fightback-modal">
+  <div class="modal modal-xl">
+    <h3>🛡️ Fight Back Techniques</h3>
+    <div class="alert-banner alert-danger" style="margin-bottom:16px">
+      <span class="alert-icon">⚠️</span>
+      <span class="alert-text">CRITICAL WARNING: These techniques can disrupt network infrastructure. Use only for authorized testing and with extreme caution.</span>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Target IP:</label>
+      <input type="text" id="fightback-target-ip" placeholder="192.168.1.1" value="127.0.0.1">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Target Port:</label>
+      <input type="number" id="fightback-target-port" placeholder="443" value="443">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Duration (seconds):</label>
+      <input type="number" id="fightback-duration" placeholder="60" value="10">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px">
+      <label>Fight Back Technique:</label>
+      <select id="fightback-technique">
+        <option value="rst_flood">TCP RST Flood</option>
+        <option value="fin_flood">TCP FIN Flood</option>
+        <option value="icmp_redirect">ICMP Redirect</option>
+        <option value="arp_spoofing">ARP Spoofing</option>
+        <option value="dns_poisoning">DNS Poisoning</option>
+        <option value="tcp_hijacking">TCP Hijacking</option>
+        <option value="session_hijacking">Session Hijacking</option>
+        <option value="combined">Combined Fight Back</option>
+      </select>
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-gateway-group" style="display:none">
+      <label>Gateway IP:</label>
+      <input type="text" id="fightback-gateway-ip" placeholder="192.168.1.254" value="192.168.1.254">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-dns-group" style="display:none">
+      <label>DNS Server:</label>
+      <input type="text" id="fightback-dns-server" placeholder="8.8.8.8" value="8.8.8.8">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-domain-group" style="display:none">
+      <label>Domain:</label>
+      <input type="text" id="fightback-domain" placeholder="google.com" value="google.com">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-fake-ip-group" style="display:none">
+      <label>Fake IP:</label>
+      <input type="text" id="fightback-fake-ip" placeholder="1.2.3.4" value="1.2.3.4">
+    </div>
+    
+    <div class="form-group" style="margin-bottom:16px" id="fightback-session-group" style="display:none">
+      <label>Session ID:</label>
+      <input type="text" id="fightback-session-id" placeholder="abc123def456" value="test-session-id">
+    </div>
+    
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="startFightBack()">Start Fight Back</button>
+      <button class="btn btn-orange" onclick="stopFightBack()">Stop All Techniques</button>
+      <button class="btn btn-outline" onclick="hideModal('fightback-modal')">Close</button>
+    </div>
+    
+    <div id="fightback-status" style="margin-top:16px;padding:12px;background:rgba(255,255,255,.02);border-radius:var(--radius-sm);display:none">
+      <div style="font-size:12px;color:var(--t2);margin-bottom:8px">Fight Back Status:</div>
+      <div id="fightback-status-text" style="font-size:13px;color:var(--t0)">No active techniques</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
