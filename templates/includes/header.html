@@ -45,7 +45,7 @@ input,button,textarea,select{font-family:inherit;font-size:inherit}
 @keyframes loginCardIn{from{opacity:0;transform:translateY(30px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
 .login-logo{font-size:48px;font-weight:800;letter-spacing:6px;
   background:linear-gradient(135deg,#FFD700 0%,#FFA500 50%,#FFD700 100%);background-size:200% 200%;
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   animation:logoShift 6s ease infinite;margin-bottom:6px;filter:drop-shadow(0 0 20px rgba(255,215,0,.4))}
 @keyframes logoShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
 .login-sub{color:var(--t2);margin-bottom:36px;font-size:13px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase}
@@ -72,7 +72,7 @@ input,button,textarea,select{font-family:inherit;font-size:inherit}
 .brand{display:flex;align-items:center;gap:14px}
 .brand-logo{font-size:24px;font-weight:800;letter-spacing:4px;
   background:linear-gradient(135deg,#FFD700,#FFA500,#FFD700,#DAA520);background-size:200% 200%;
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
   animation:logoShift 6s ease infinite}
 .brand-text{color:var(--t3);font-size:12px;font-weight:500;letter-spacing:.5px}
 .header-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
