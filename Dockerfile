@@ -8,20 +8,25 @@ ENV PORT=8080
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
-    curl \
-    libpq-dev \
+    build-essential gcc curl libpq-dev wget unzip ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements.txt
-COPY requirements-dpi.txt requirements-dpi.txt
-COPY requirements-firewall.txt requirements-firewall.txt
+# نصب Xray-core
+RUN XRAY_VERSION=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep '"tag_name"' | cut -d'"' -f4) && \
+    wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip && \
+    unzip /tmp/xray.zip -d /tmp/xray && \
+    mv /tmp/xray/xray /usr/local/bin/xray && \
+    chmod +x /usr/local/bin/xray && \
+    rm -rf /tmp/xray /tmp/xray.zip
+
+COPY requirements.txt .
+COPY requirements-dpi.txt .
+COPY requirements-firewall.txt .
 
 RUN pip install --upgrade pip setuptools wheel && \
     pip install -r requirements.txt && \
-    if [ -f requirements-dpi.txt ]; then pip install -r requirements-dpi.txt; fi && \
-    if [ -f requirements-firewall.txt ]; then pip install -r requirements-firewall.txt; fi
+    pip install -r requirements-dpi.txt || true && \
+    pip install -r requirements-firewall.txt || true
 
 COPY . .
 
