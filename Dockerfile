@@ -1,47 +1,30 @@
-# ═══ Stage 1: Builder ═══
-FROM python:3.11-slim AS builder
-
-WORKDIR /build
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
-# ═══ Stage 2: Runtime ═══
 FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PORT=8080
 
 WORKDIR /app
 
-# Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
+    build-essential \
+    gcc \
     curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy installed Python packages from builder
-COPY --from=builder /install /usr/local
+COPY requirements.txt requirements.txt
+COPY requirements-dpi.txt requirements-dpi.txt
+COPY requirements-firewall.txt requirements-firewall.txt
 
-# Copy application code
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.txt && \
+    if [ -f requirements-dpi.txt ]; then pip install -r requirements-dpi.txt; fi && \
+    if [ -f requirements-firewall.txt ]; then pip install -r requirements-firewall.txt; fi
+
 COPY . .
 
-# Create necessary directories with proper permissions
-RUN mkdir -p logs config static/downloads backups \
-    && chown -R appuser:appuser /app
+EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:38471/api/health || exit 1
-
-# Run as non-root user
-USER appuser
-
-EXPOSE 38471 10085
-
-# Run migrations and start app
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 38471"]
+CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"
